@@ -53,6 +53,12 @@ if 'registros' not in st.session_state:
     st.session_state.registros = []
 if 'ultima_actualizacion' not in st.session_state:
     st.session_state.ultima_actualizacion = datetime.now()
+if 'email_config' not in st.session_state:
+    st.session_state.email_config = {
+        'origen': '',
+        'password': '',
+        'destino': ''
+    }
 
 def limpiar_registros_antiguos():
     """Elimina registros de más de 2 horas"""
@@ -99,17 +105,35 @@ def generar_excel():
     
     return output.getvalue()
 
-def enviar_email(excel_data, email_destino):
-    """Envía el Excel por email"""
+def enviar_email(excel_data):
+    """Envía el Excel usando la configuración guardada"""
     try:
-        # Configuración SMTP (para Gmail)
-        email_origen = "tu_email@gmail.com"  # Cambiar
-        password = "tu_contraseña_app"  # Cambiar (usar contraseña de aplicación)
+        config = st.session_state.email_config
         
+        # Validar que la configuración esté completa
+        if not config['origen']:
+            return False, "❌ Primero configura el EMAIL ORIGEN en el panel lateral"
+        if not config['password']:
+            return False, "❌ Primero configura la CONTRASEÑA en el panel lateral"
+        if not config['destino']:
+            return False, "❌ Primero configura el EMAIL DESTINO en el panel lateral"
+        
+        # Crear mensaje
         msg = MIMEMultipart()
-        msg['From'] = email_origen
-        msg['To'] = email_destino
+        msg['From'] = config['origen']
+        msg['To'] = config['destino']
         msg['Subject'] = f"Informe Seguimiento Obra - {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        
+        # Cuerpo del mensaje
+        cuerpo = f"""Informe de Seguimiento de Obra
+
+Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
+Total de registros: {len(st.session_state.registros)}
+Trabajadores: {len(set(r['trabajador'] for r in st.session_state.registros))}
+
+Se adjunta archivo Excel con el detalle completo.
+        """
+        msg.attach(MIMEBase('text', 'plain', _charset='utf-8'))
         
         # Adjuntar Excel
         attachment = MIMEBase('application', 'octet-stream')
@@ -124,28 +148,93 @@ def enviar_email(excel_data, email_destino):
         # Enviar
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
-        server.login(email_origen, password)
+        server.login(config['origen'], config['password'])
         server.send_message(msg)
         server.quit()
         
-        return True, "Email enviado correctamente"
+        return True, f"✅ Email enviado correctamente a {config['destino']}"
     except Exception as e:
-        return False, f"Error al enviar: {str(e)}"
-
-def descargar_excel():
-    """Permite descargar el Excel desde el navegador"""
-    excel_data = generar_excel()
-    if excel_data:
-        b64 = base64.b64encode(excel_data).decode()
-        href = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="seguimiento_obra.xlsx">📥 Descargar Excel</a>'
-        return href
-    return None
+        return False, f"❌ Error al enviar: {str(e)}"
 
 # Limpiar registros antiguos al inicio
 limpiar_registros_antiguos()
 
-# Interfaz principal
+# ==================== INTERFAZ PRINCIPAL ====================
+
 st.title("🏗️ Sistema de Seguimiento de Obra")
+
+# Barra lateral con configuración de email
+with st.sidebar:
+    st.markdown("### 📧 CONFIGURACIÓN DE EMAIL")
+    st.markdown("---")
+    
+    st.markdown("**Configuración del correo electrónico:**")
+    
+    email_origen = st.text_input(
+        "📤 Email ORIGEN (el que envía)",
+        value=st.session_state.email_config['origen'],
+        placeholder="tuempresa@gmail.com",
+        help="Correo desde donde se enviarán los informes"
+    )
+    
+    email_password = st.text_input(
+        "🔑 Contraseña de aplicación",
+        value=st.session_state.email_config['password'],
+        type="password",
+        placeholder="xxxx xxxx xxxx xxxx",
+        help="Usar contraseña de aplicación de Gmail (no tu contraseña normal)"
+    )
+    
+    st.markdown("---")
+    st.markdown("**📥 Email DESTINO (donde quieres recibir los informes):**")
+    
+    email_destino = st.text_input(
+        "📬 Email DESTINO",
+        value=st.session_state.email_config['destino'],
+        placeholder="informes@tuempresa.com",
+        help="Correo donde quieres recibir los informes"
+    )
+    
+    col1_btn, col2_btn = st.columns(2)
+    with col1_btn:
+        if st.button("💾 Guardar configuración", use_container_width=True):
+            st.session_state.email_config['origen'] = email_origen
+            st.session_state.email_config['password'] = email_password
+            st.session_state.email_config['destino'] = email_destino
+            st.success("✅ Configuración guardada")
+    
+    with col2_btn:
+        if st.button("🗑️ Limpiar", use_container_width=True):
+            st.session_state.email_config = {'origen': '', 'password': '', 'destino': ''}
+            st.rerun()
+    
+    # Mostrar estado de la configuración
+    st.markdown("---")
+    st.markdown("**Estado de configuración:**")
+    
+    if st.session_state.email_config['origen']:
+        st.success("✅ Email origen configurado")
+    else:
+        st.error("❌ Email origen no configurado")
+    
+    if st.session_state.email_config['destino']:
+        st.success(f"✅ Email destino: {st.session_state.email_config['destino']}")
+    else:
+        st.error("❌ Email destino no configurado")
+    
+    if st.session_state.email_config['password']:
+        st.success("✅ Contraseña configurada")
+    else:
+        st.error("❌ Contraseña no configurada")
+    
+    st.markdown("---")
+    st.markdown("### ℹ️ Ayuda")
+    st.markdown("""
+    **¿Cómo obtener contraseña de aplicación?**
+    1. Ve a tu cuenta de Google
+    2. Activa verificación en 2 pasos
+    3. Genera contraseña de aplicación
+    """)
 
 # Columnas para logo y título
 col1, col2 = st.columns([1, 4])
@@ -205,8 +294,13 @@ with col_registros:
         with col2_stat:
             st.metric("Tareas Completadas", tareas_completadas)
         with col3_stat:
-            horas_restantes = 2 - (datetime.now() - st.session_state.ultima_actualizacion).total_seconds() / 3600
-            st.metric("Horas hasta limpieza", f"{max(0, horas_restantes):.1f}h")
+            if st.session_state.registros:
+                primer_registro = min(r['hora_registro'] for r in st.session_state.registros if 'hora_registro' in r)
+                horas_transcurridas = (datetime.now() - primer_registro).total_seconds() / 3600
+                horas_restantes = max(0, 2 - horas_transcurridas)
+                st.metric("Horas hasta limpieza", f"{horas_restantes:.1f}h")
+            else:
+                st.metric("Horas hasta limpieza", "0h")
     else:
         st.info("ℹ️ No hay registros aún. Complete el formulario para comenzar.")
 
@@ -222,33 +316,32 @@ with col_export1:
         if excel_data:
             # Crear enlace de descarga
             b64 = base64.b64encode(excel_data).decode()
-            href = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="seguimiento_obra_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx" style="text-decoration: none;">✅ Click aquí para descargar Excel</a>'
+            href = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="seguimiento_obra_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx" style="text-decoration: none; background-color: #4CAF50; color: white; padding: 10px 20px; border-radius: 5px; display: inline-block;">✅ HAZ CLIC PARA DESCARGAR EXCEL</a>'
             st.markdown(href, unsafe_allow_html=True)
             st.success("✅ Excel generado correctamente")
         else:
             st.warning("⚠️ No hay datos para generar el Excel")
 
 with col_export2:
-    with st.expander("📧 Enviar por Email"):
-        email_destino = st.text_input("Email destino", placeholder="ejemplo@empresa.com")
-        if st.button("Enviar", use_container_width=True):
-            if not email_destino:
-                st.error("❌ Ingrese un email destino")
+    if st.button("📧 ENVIAR POR EMAIL", use_container_width=True):
+        excel_data = generar_excel()
+        if excel_data:
+            # Verificar configuración primero
+            if not st.session_state.email_config['origen'] or not st.session_state.email_config['password'] or not st.session_state.email_config['destino']:
+                st.error("❌ Primero configura el email en el panel lateral")
             else:
-                excel_data = generar_excel()
-                if excel_data:
-                    with st.spinner("Enviando email..."):
-                        success, message = enviar_email(excel_data, email_destino)
-                        if success:
-                            st.success(message)
-                        else:
-                            st.error(message)
-                else:
-                    st.warning("⚠️ No hay datos para enviar")
+                with st.spinner("📧 Enviando email..."):
+                    success, message = enviar_email(excel_data)
+                    if success:
+                        st.success(message)
+                    else:
+                        st.error(message)
+        else:
+            st.warning("⚠️ No hay datos para enviar")
 
 with col_export3:
-    if st.button("🗑️ LIMPIAR FORMULARIO", use_container_width=True):
-        st.session_state.form_limpiado = True
+    if st.button("🔄 ACTUALIZAR", use_container_width=True):
+        limpiar_registros_antiguos()
         st.rerun()
 
 # Aviso de tiempo
@@ -256,37 +349,6 @@ st.markdown("---")
 st.warning("⚠️ **NOTA IMPORTANTE:** Los datos solo se guardan durante 2 horas. "
           "Descargue el Excel o envíelo por email para conservar el registro.")
 
-# Sidebar con información
-with st.sidebar:
-    st.markdown("### 📊 Resumen General")
-    
-    if st.session_state.registros:
-        # Resumen por trabajador
-        df_resumen = pd.DataFrame(st.session_state.registros)
-        st.markdown("#### 👷 Actividad por trabajador:")
-        trabajador_counts = df_resumen['trabajador'].value_counts()
-        for trabajador, count in trabajador_counts.items():
-            st.write(f"- {trabajador}: {count} tareas")
-        
-        st.markdown("#### 📈 Estado de tareas:")
-        estado_counts = df_resumen['estado'].value_counts()
-        for estado, count in estado_counts.items():
-            st.write(f"- {estado[:30]}: {count}")
-    else:
-        st.info("No hay registros aún")
-    
-    st.markdown("---")
-    st.markdown("### 📱 Instrucciones")
-    st.markdown("""
-    1. Complete el formulario con los datos de la tarea
-    2. Presione 'Guardar Registro'
-    3. Genere el Excel cuando necesite exportar
-    4. Envíe por email para archivo permanente
-    
-    **Tiempo de retención:** 2 horas
-    """)
-
-# Actualizar timestamp periódicamente
-if st.button("🔄 Actualizar"):
-    limpiar_registros_antiguos()
-    st.rerun()
+# Mostrar email destino actual si está configurado
+if st.session_state.email_config['destino']:
+    st.info(f"📬 Los informes se enviarán a: **{st.session_state.email_config['destino']}**")
