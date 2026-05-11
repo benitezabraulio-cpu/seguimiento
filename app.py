@@ -361,6 +361,8 @@ with col_export3:
 st.markdown("---")
 st.warning("⚠️ **NOTA IMPORTANTE:** Los datos solo se guardan durante 2 horas. "
           "Descargue el Excel o envíelo por email para conservar el registro.")
-
+git add requirements.txt app.py
+git commit -m "Agregado requirements.txt con openpyxl"
+git push
 # Mostrar información de envío
 st.info(f"📬 **Los informes se enviarán automáticamente a:** {EMAIL_DESTINO}")
