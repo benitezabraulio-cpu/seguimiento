@@ -11,6 +11,13 @@ import io
 import base64
 from PIL import Image
 
+# Verificar que openpyxl esté instalado
+try:
+    from openpyxl import Workbook
+except ImportError:
+    st.error("❌ Falta instalar openpyxl. Ejecuta: pip install openpyxl")
+    st.stop()
+
 # Configuración de la página
 st.set_page_config(
     page_title="Seguimiento de Obra - Fundación Masaveu",
@@ -18,10 +25,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# ===== CONFIGURACIÓN DE EMAIL (YA CONFIGURADA) =====
-EMAIL_ORIGEN = "beniteza.braulio@alumnos25.fundacionmasaveu.com"  # Tu correo
-EMAIL_DESTINO = "ana@fundacionmasaveu.com"  # Correo de Ana
-# ===================================================
+# ===== CONFIGURACIÓN DE EMAIL =====
+EMAIL_ORIGEN = "beniteza.braulio@alumnos25.fundacionmasaveu.com"
+EMAIL_DESTINO = "ana@fundacionmasaveu.com"
+# ===================================
 
 # Lista de tareas predefinidas
 TAREAS = [
@@ -96,16 +103,31 @@ def generar_excel():
     if not st.session_state.registros:
         return None
     
-    df = pd.DataFrame(st.session_state.registros)
-    # Convertir hora_registro a string para Excel
-    if 'hora_registro' in df.columns:
-        df['hora_registro'] = df['hora_registro'].astype(str)
-    
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Seguimiento Obra')
-    
-    return output.getvalue()
+    try:
+        df = pd.DataFrame(st.session_state.registros)
+        # Convertir hora_registro a string para Excel
+        if 'hora_registro' in df.columns:
+            df['hora_registro'] = df['hora_registro'].astype(str)
+        
+        # Eliminar columnas que no queremos mostrar
+        if 'comentarios' in df.columns:
+            # Mantener comentarios pero en otra posición
+            pass
+        
+        output = io.BytesIO()
+        # Usar xlsxwriter como alternativa si openpyxl falla
+        try:
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Seguimiento Obra')
+        except:
+            # Fallback a xlsxwriter
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df.to_excel(writer, index=False, sheet_name='Seguimiento Obra')
+        
+        return output.getvalue()
+    except Exception as e:
+        st.error(f"Error al generar Excel: {str(e)}")
+        return None
 
 def enviar_email(excel_data, password):
     """Envía el Excel usando la configuración fija"""
@@ -361,8 +383,6 @@ with col_export3:
 st.markdown("---")
 st.warning("⚠️ **NOTA IMPORTANTE:** Los datos solo se guardan durante 2 horas. "
           "Descargue el Excel o envíelo por email para conservar el registro.")
-git add requirements.txt app.py
-git commit -m "Agregado requirements.txt con openpyxl"
-git push
+
 # Mostrar información de envío
 st.info(f"📬 **Los informes se enviarán automáticamente a:** {EMAIL_DESTINO}")
