@@ -5,6 +5,7 @@ import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
 from email import encoders
 import io
 import base64
@@ -12,10 +13,15 @@ from PIL import Image
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Seguimiento de Obra",
+    page_title="Seguimiento de Obra - Fundación Masaveu",
     page_icon="🏗️",
     layout="wide"
 )
+
+# ===== CONFIGURACIÓN DE EMAIL (YA CONFIGURADA) =====
+EMAIL_ORIGEN = "beniteza.braulio@alumnos25.fundacionmasaveu.com"  # Tu correo
+EMAIL_DESTINO = "ana@fundacionmasaveu.com"  # Correo de Ana
+# ===================================================
 
 # Lista de tareas predefinidas
 TAREAS = [
@@ -53,12 +59,8 @@ if 'registros' not in st.session_state:
     st.session_state.registros = []
 if 'ultima_actualizacion' not in st.session_state:
     st.session_state.ultima_actualizacion = datetime.now()
-if 'email_config' not in st.session_state:
-    st.session_state.email_config = {
-        'origen': '',
-        'password': '',
-        'destino': ''
-    }
+if 'password_config' not in st.session_state:
+    st.session_state.password_config = ''
 
 def limpiar_registros_antiguos():
     """Elimina registros de más de 2 horas"""
@@ -105,35 +107,37 @@ def generar_excel():
     
     return output.getvalue()
 
-def enviar_email(excel_data):
-    """Envía el Excel usando la configuración guardada"""
+def enviar_email(excel_data, password):
+    """Envía el Excel usando la configuración fija"""
     try:
-        config = st.session_state.email_config
-        
-        # Validar que la configuración esté completa
-        if not config['origen']:
-            return False, "❌ Primero configura el EMAIL ORIGEN en el panel lateral"
-        if not config['password']:
-            return False, "❌ Primero configura la CONTRASEÑA en el panel lateral"
-        if not config['destino']:
-            return False, "❌ Primero configura el EMAIL DESTINO en el panel lateral"
+        # Validar que la contraseña esté configurada
+        if not password:
+            return False, "❌ Primero introduce la contraseña de aplicación en el panel lateral"
         
         # Crear mensaje
         msg = MIMEMultipart()
-        msg['From'] = config['origen']
-        msg['To'] = config['destino']
+        msg['From'] = EMAIL_ORIGEN
+        msg['To'] = EMAIL_DESTINO
         msg['Subject'] = f"Informe Seguimiento Obra - {datetime.now().strftime('%d/%m/%Y %H:%M')}"
         
         # Cuerpo del mensaje
         cuerpo = f"""Informe de Seguimiento de Obra
 
-Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
+Fecha del informe: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
 Total de registros: {len(st.session_state.registros)}
-Trabajadores: {len(set(r['trabajador'] for r in st.session_state.registros))}
+Trabajadores que han reportado: {len(set(r['trabajador'] for r in st.session_state.registros))}
 
-Se adjunta archivo Excel con el detalle completo.
+Resumen de tareas:
+{generar_resumen_tareas()}
+
+Se adjunta archivo Excel con el detalle completo de todos los registros.
+
+--
+Sistema de Seguimiento de Obra
+Fundación Masaveu
         """
-        msg.attach(MIMEBase('text', 'plain', _charset='utf-8'))
+        
+        msg.attach(MIMEText(cuerpo, 'plain', 'utf-8'))
         
         # Adjuntar Excel
         attachment = MIMEBase('application', 'octet-stream')
@@ -148,82 +152,84 @@ Se adjunta archivo Excel con el detalle completo.
         # Enviar
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
-        server.login(config['origen'], config['password'])
+        server.login(EMAIL_ORIGEN, password)
         server.send_message(msg)
         server.quit()
         
-        return True, f"✅ Email enviado correctamente a {config['destino']}"
+        return True, f"✅ Email enviado correctamente a {EMAIL_DESTINO}"
     except Exception as e:
         return False, f"❌ Error al enviar: {str(e)}"
+
+def generar_resumen_tareas():
+    """Genera un resumen de las tareas para el cuerpo del email"""
+    if not st.session_state.registros:
+        return "No hay registros."
+    
+    resumen = ""
+    estados_count = {}
+    tareas_por_trabajador = {}
+    
+    for r in st.session_state.registros:
+        # Contar por estado
+        estado = r['estado']
+        estados_count[estado] = estados_count.get(estado, 0) + 1
+        
+        # Contar por trabajador
+        trabajador = r['trabajador']
+        if trabajador not in tareas_por_trabajador:
+            tareas_por_trabajador[trabajador] = 0
+        tareas_por_trabajador[trabajador] += 1
+    
+    resumen += "\n📊 Por estado:\n"
+    for estado, count in estados_count.items():
+        resumen += f"   - {estado[:40]}: {count} tareas\n"
+    
+    resumen += "\n👷 Por trabajador:\n"
+    for trabajador, count in tareas_por_trabajador.items():
+        resumen += f"   - {trabajador}: {count} tareas\n"
+    
+    return resumen
 
 # Limpiar registros antiguos al inicio
 limpiar_registros_antiguos()
 
 # ==================== INTERFAZ PRINCIPAL ====================
 
-st.title("🏗️ Sistema de Seguimiento de Obra")
+st.title("🏗️ Sistema de Seguimiento de Obra - Fundación Masaveu")
 
-# Barra lateral con configuración de email
+# Barra lateral con configuración
 with st.sidebar:
     st.markdown("### 📧 CONFIGURACIÓN DE EMAIL")
     st.markdown("---")
     
-    st.markdown("**Configuración del correo electrónico:**")
+    st.markdown(f"**📤 Email ORIGEN:**")
+    st.code(EMAIL_ORIGEN, language="")
     
-    email_origen = st.text_input(
-        "📤 Email ORIGEN (el que envía)",
-        value=st.session_state.email_config['origen'],
-        placeholder="tuempresa@gmail.com",
-        help="Correo desde donde se enviarán los informes"
-    )
-    
-    email_password = st.text_input(
-        "🔑 Contraseña de aplicación",
-        value=st.session_state.email_config['password'],
-        type="password",
-        placeholder="xxxx xxxx xxxx xxxx",
-        help="Usar contraseña de aplicación de Gmail (no tu contraseña normal)"
-    )
+    st.markdown(f"**📬 Email DESTINO:**")
+    st.code(EMAIL_DESTINO, language="")
     
     st.markdown("---")
-    st.markdown("**📥 Email DESTINO (donde quieres recibir los informes):**")
+    st.markdown("**🔑 Contraseña de aplicación (Gmail):**")
     
-    email_destino = st.text_input(
-        "📬 Email DESTINO",
-        value=st.session_state.email_config['destino'],
-        placeholder="informes@tuempresa.com",
-        help="Correo donde quieres recibir los informes"
+    password = st.text_input(
+        "Contraseña de aplicación",
+        type="password",
+        placeholder="xxxx xxxx xxxx xxxx",
+        help="Necesitas generar una contraseña de aplicación en tu cuenta de Gmail",
+        value=st.session_state.password_config
     )
     
-    col1_btn, col2_btn = st.columns(2)
-    with col1_btn:
-        if st.button("💾 Guardar configuración", use_container_width=True):
-            st.session_state.email_config['origen'] = email_origen
-            st.session_state.email_config['password'] = email_password
-            st.session_state.email_config['destino'] = email_destino
-            st.success("✅ Configuración guardada")
+    if st.button("💾 Guardar contraseña", use_container_width=True):
+        st.session_state.password_config = password
+        st.success("✅ Contraseña guardada")
     
-    with col2_btn:
-        if st.button("🗑️ Limpiar", use_container_width=True):
-            st.session_state.email_config = {'origen': '', 'password': '', 'destino': ''}
-            st.rerun()
-    
-    # Mostrar estado de la configuración
+    # Mostrar estado
     st.markdown("---")
     st.markdown("**Estado de configuración:**")
     
-    if st.session_state.email_config['origen']:
-        st.success("✅ Email origen configurado")
-    else:
-        st.error("❌ Email origen no configurado")
-    
-    if st.session_state.email_config['destino']:
-        st.success(f"✅ Email destino: {st.session_state.email_config['destino']}")
-    else:
-        st.error("❌ Email destino no configurado")
-    
-    if st.session_state.email_config['password']:
+    if st.session_state.password_config:
         st.success("✅ Contraseña configurada")
+        st.success(f"✅ Envíos a: {EMAIL_DESTINO}")
     else:
         st.error("❌ Contraseña no configurada")
     
@@ -233,8 +239,14 @@ with st.sidebar:
     **¿Cómo obtener contraseña de aplicación?**
     1. Ve a tu cuenta de Google
     2. Activa verificación en 2 pasos
-    3. Genera contraseña de aplicación
+    3. Ve a "Contraseñas de aplicación"
+    4. Selecciona "Otra" y pon nombre
+    5. Copia la contraseña de 16 dígitos
     """)
+    
+    st.markdown("---")
+    st.markdown(f"**📬 Los informes se envían a:**")
+    st.info(f"**{EMAIL_DESTINO}**")
 
 # Columnas para logo y título
 col1, col2 = st.columns([1, 4])
@@ -245,7 +257,7 @@ with col1:
         st.image(logo, width=100)
     except:
         st.markdown("### 🏢")
-        st.caption("Logo Empresa")
+        st.caption("Fundación Masaveu")
 
 with col2:
     st.markdown("## Control de Avance de Obra")
@@ -326,14 +338,15 @@ with col_export2:
     if st.button("📧 ENVIAR POR EMAIL", use_container_width=True):
         excel_data = generar_excel()
         if excel_data:
-            # Verificar configuración primero
-            if not st.session_state.email_config['origen'] or not st.session_state.email_config['password'] or not st.session_state.email_config['destino']:
-                st.error("❌ Primero configura el email en el panel lateral")
+            # Verificar contraseña
+            if not st.session_state.password_config:
+                st.error("❌ Primero introduce la contraseña de aplicación en el panel lateral")
             else:
                 with st.spinner("📧 Enviando email..."):
-                    success, message = enviar_email(excel_data)
+                    success, message = enviar_email(excel_data, st.session_state.password_config)
                     if success:
                         st.success(message)
+                        st.balloons()
                     else:
                         st.error(message)
         else:
@@ -349,6 +362,5 @@ st.markdown("---")
 st.warning("⚠️ **NOTA IMPORTANTE:** Los datos solo se guardan durante 2 horas. "
           "Descargue el Excel o envíelo por email para conservar el registro.")
 
-# Mostrar email destino actual si está configurado
-if st.session_state.email_config['destino']:
-    st.info(f"📬 Los informes se enviarán a: **{st.session_state.email_config['destino']}**")
+# Mostrar información de envío
+st.info(f"📬 **Los informes se enviarán automáticamente a:** {EMAIL_DESTINO}")
